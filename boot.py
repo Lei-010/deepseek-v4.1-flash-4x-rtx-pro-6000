@@ -134,8 +134,12 @@ def smoke():
                       'required':['answer'],'additionalProperties':False}}}),timeout=300)
     assert json.loads(structured['choices'][0]['message']['content']) == {'answer':42}
     save('smoke-structured.json',structured)
-    # PATCH8: TP=8 tool-call smoke emits DSML syntax as plain text (parser gap);
-    # non-fatal for text benchmarking per PATCH7c precedent. Logged for follow-up.
+    # PATCH9 (2026-09-21): DSPARK speculative decoding corrupts special-token
+    # sequences on this build (DSML tool tags degrade to plain text 12/12; vision
+    # PIL path raises math domain error). Root-caused via A/B: SPEC_ALGORITHM=none
+    # restores 12/12 structured tool calls AND working vision. Toggle via
+    # SPEC_ALGORITHM=dspark|none env (run_dsv41.sh passes it through).
+    # PATCH8's try-block retained only as a tripwire in case DSPARK is re-enabled.
     try:
         tool = {'type':'function','function':{'name':'lookup_fixture',
             'description':'Retrieve a stored test value.',
@@ -207,7 +211,12 @@ def serve():
         '--attention-backend','dsv4','--moe-runner-backend','flashinfer_mxfp4',
         '--mem-fraction-static',str(memory_fraction),'--chunked-prefill-size',str(chunk),
         '--context-length',str(context),'--max-running-requests',str(concurrency),'--cuda-graph-max-bs-decode',str(concurrency),
-        '--min-free-slots-delay','1','--random-seed','0','--speculative-algorithm','DSPARK','--speculative-dspark-block-size','6',
+        '--min-free-slots-delay','1','--random-seed','0',
+        # PATCH-ENV-SPEC: gate speculative decoding for A/B benchmarking.
+        # SPEC_ALGORITHM=none disables DSPARK entirely; DSPARK_BLOCK_SIZE tunes it.
+        *(() if os.environ.get('SPEC_ALGORITHM','dspark').lower() == 'none' else
+          ('--speculative-algorithm','DSPARK','--speculative-dspark-block-size',
+           os.environ.get('DSPARK_BLOCK_SIZE','6'))),
         '--tool-call-parser','deepseekv41',
         '--skip-server-warmup',
         '--reasoning-parser','deepseek-v41','--host','0.0.0.0','--port',str(PORT)]

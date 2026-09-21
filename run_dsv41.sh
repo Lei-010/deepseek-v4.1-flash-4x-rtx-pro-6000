@@ -18,6 +18,8 @@ docker run -d --name dsv41 \
   -e PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
   -e MAX_RUNNING_REQUESTS=8 \
   -e SERVER_PORT=8000 \
+  -e SPEC_ALGORITHM=${SPEC_ALGORITHM:-dspark} \
+  -e DSPARK_BLOCK_SIZE=${DSPARK_BLOCK_SIZE:-6} \
   -e HF_META_BASE=https://hf-mirror.com \
   -e HTTPS_PROXY=http://127.0.0.1:18888 \
   -e HTTP_PROXY=http://127.0.0.1:18888 \
