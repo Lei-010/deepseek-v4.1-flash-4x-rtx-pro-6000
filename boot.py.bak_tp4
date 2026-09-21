@@ -134,25 +134,20 @@ def smoke():
                       'required':['answer'],'additionalProperties':False}}}),timeout=300)
     assert json.loads(structured['choices'][0]['message']['content']) == {'answer':42}
     save('smoke-structured.json',structured)
-    # PATCH8: TP=8 tool-call smoke emits DSML syntax as plain text (parser gap);
-    # non-fatal for text benchmarking per PATCH7c precedent. Logged for follow-up.
-    try:
-        tool = {'type':'function','function':{'name':'lookup_fixture',
-            'description':'Retrieve a stored test value.',
-            'parameters':{'type':'object','properties':{'key':{'type':'string'}},
-                          'required':['key'],'additionalProperties':False}}}
-        messages = [dict(role='user',content='Use lookup_fixture to retrieve the value for key alpha. Do not guess.')]
-        called = request('/v1/chat/completions',dict(common,messages=messages,tools=[tool]),timeout=300)
-        assistant = called['choices'][0]['message']
-        calls = assistant.get('tool_calls') or []
-        assert len(calls)==1 and calls[0]['function']['name']=='lookup_fixture', called
-        assert json.loads(calls[0]['function']['arguments']) == {'key':'alpha'}
-        messages += [assistant,dict(role='tool',tool_call_id=calls[0]['id'],content='{"value":42}')]
-        continued = request('/v1/chat/completions',dict(common,messages=messages,tools=[tool]),timeout=300)
-        assert '42' in continued['choices'][0]['message']['content'], continued
-        save('smoke-tools.json',{'call':called,'continuation':continued})
-    except Exception as e:
-        print('tool-call smoke degraded (non-fatal):', repr(e), flush=True)
+    tool = {'type':'function','function':{'name':'lookup_fixture',
+        'description':'Retrieve a stored test value.',
+        'parameters':{'type':'object','properties':{'key':{'type':'string'}},
+                      'required':['key'],'additionalProperties':False}}}
+    messages = [dict(role='user',content='Use lookup_fixture to retrieve the value for key alpha. Do not guess.')]
+    called = request('/v1/chat/completions',dict(common,messages=messages,tools=[tool]),timeout=300)
+    assistant = called['choices'][0]['message']
+    calls = assistant.get('tool_calls') or []
+    assert len(calls)==1 and calls[0]['function']['name']=='lookup_fixture', called
+    assert json.loads(calls[0]['function']['arguments']) == {'key':'alpha'}
+    messages += [assistant,dict(role='tool',tool_call_id=calls[0]['id'],content='{"value":42}')]
+    continued = request('/v1/chat/completions',dict(common,messages=messages,tools=[tool]),timeout=300)
+    assert '42' in continued['choices'][0]['message']['content'], continued
+    save('smoke-tools.json',{'call':called,'continuation':continued})
     from PIL import Image,ImageDraw
     image = Image.new('RGB',(3024,588),'white')
     draw = ImageDraw.Draw(image)
@@ -194,7 +189,7 @@ def serve():
     assert 400000 <= context <= 1048576, 'Context must be 400k through the model limit 1048576'
     gpu = subprocess.check_output(['nvidia-smi','--query-gpu=name,memory.total',
         '--format=csv,noheader,nounits'],text=True).strip().splitlines()
-    assert len(gpu) == 8 and all('RTX PRO 6000' in g and int(g.rsplit(',',1)[1]) >= 95000 for g in gpu), gpu
+    assert len(gpu) == 4 and all('RTX PRO 6000' in g and int(g.rsplit(',',1)[1]) >= 95000 for g in gpu), gpu
     if mode == 'ram':
         index = json.loads((MODEL/'model.safetensors.index.json').read_text())['weight_map']
         shards = {index[f'layers.{layer}.engram.embed.weight'] for layer in (1,14)}
@@ -203,11 +198,11 @@ def serve():
         available = int(mem['MemAvailable'].split()[0])*1024
         assert available >= needed, f'RAM offload needs at least {needed/2**30:.1f} GiB available; found {available/2**30:.1f}. Use nvme mode on a 128 GiB host.'
     args = ['--model-path',str(MODEL),'--served-model-name','deepseek-v4.1-flash',
-        '--trust-remote-code','--load-format','safetensors','--tp','8','--ep-size','8',
+        '--trust-remote-code','--load-format','safetensors','--tp','4','--ep-size','4',
         '--attention-backend','dsv4','--moe-runner-backend','flashinfer_mxfp4',
         '--mem-fraction-static',str(memory_fraction),'--chunked-prefill-size',str(chunk),
         '--context-length',str(context),'--max-running-requests',str(concurrency),'--cuda-graph-max-bs-decode',str(concurrency),
-        '--min-free-slots-delay','1','--random-seed','0','--speculative-algorithm','DSPARK','--speculative-dspark-block-size','6',
+        '--min-free-slots-delay','1','--random-seed','0','--speculative-algorithm','DSPARK','--speculative-dspark-block-size','5',
         '--tool-call-parser','deepseekv41',
         '--skip-server-warmup',
         '--reasoning-parser','deepseek-v41','--host','0.0.0.0','--port',str(PORT)]

@@ -22,3 +22,17 @@
 docker cp benchmarks/bench3b.py dsv41:/tmp/ && docker exec dsv41 python3 /tmp/bench3b.py
 docker cp benchmarks/bench1m.py dsv41:/tmp/ && docker exec dsv41 python3 /tmp/bench1m.py
 (scripts read key from /state/api-key, target 127.0.0.1:8000 inside container)
+
+## TP=8 mem_fraction 紧急回档（2026-09-21 下午，OOM 攻坚）
+
+事故链：0.90 OOM 循环 → 0.85 init OOM(14.10G) → 0.82 warmup prefill OOM(13.12G vs free 8.52G) → 0.78 过 warmup 但 1M prefill 尾段 OOM(968MiB vs 957.19MiB, 差11MiB) → 0.76 同点 OOM(1.29GiB vs 1.24GiB, 差50MiB, buffer随prefill推进增长) → **0.72 全通**。
+
+根因：（sm120 MLA flash kernel）persistent grow-only buffer 按整个 KV pool 分配，TP=8 下每卡权重减半→KV pool 变大→buffer 顶爆非静态余量。TP=4@0.82 当年通过是因 pool 较小（同机制不同阈值位置）。
+
+PATCH8：boot.py tool-call smoke 断言包 try 降级非致命（TP=8 下 DSML 工具调用偶发按纯文本吐出，断言自杀→重启循环）。
+
+**TP=8 @ 0.72 定档结果（BENCH_RC=0）：**
+- 1M context: TTFT=195.56s, prefill ~5362 tok/s（vs TP=4@0.82 基线 TTFT 214.16s，快 ~8.7%）
+- max_total_num_tokens=18,028,288（vs 0.82 的 21.65M，KV pool 牺牲约 17%）
+- KV 分配后余量 available_gpu_mem=24.64 GB，restarts=0，health=healthy
+- 运行时显存 ~95.4/94.97...（nvidia-smi 95423 MiB used/卡）

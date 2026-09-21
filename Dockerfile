@@ -4,6 +4,9 @@ COPY adapter /opt/dsv41/adapter
 RUN g++ -O2 -Wall -Wextra -Werror -std=c++17 -shared -fPIC -pthread \
     adapter/row_store.cpp -o adapter/librow_store.so
 COPY runtime/flash_mla_sm120.py /sgl-workspace/sglang/python/sglang/kernels/ops/attention/flash_mla_sm120.py
+# PATCH6: patched model loader (tolerate missing layer-20 wgate)
+COPY runtime/deepseek_v4.py /sgl-workspace/sglang/python/sglang/srt/models/deepseek_v4.py
+RUN rm -f /sgl-workspace/sglang/python/sglang/srt/models/__pycache__/deepseek_v4.cpython-*.pyc
 COPY boot.py /opt/dsv41/boot.py
 COPY tests /opt/dsv41/tests
 COPY benchmarks /opt/dsv41/benchmarks
